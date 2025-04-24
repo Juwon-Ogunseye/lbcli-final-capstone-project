@@ -1,39 +1,40 @@
 # How many satoshis did this transaction pay for fee?: b71fb9ab7707407cc7265591e0c0d47d07afede654f91de1f63c0cb522914bcb
 #!/bin/bash
 
-#!/bin/bash
-
 TXID="b71fb9ab7707407cc7265591e0c0d47d07afede654f91de1f63c0cb522914bcb"
 
-# Function to convert BTC to satoshis
-btc_to_sats() {
-    echo "$1 * 100000000" | bc | awk '{printf "%.0f", $1}'
-}
-
-# Get the transaction data
+# Get the raw transaction data
 TX_DATA=$(bitcoin-cli -signet getrawtransaction "$TXID" 1)
 
-# Calculate total outputs in satoshis
-OUTPUTS_SATS=$(echo "$TX_DATA" | jq -r '[.vout[].value] | add | . * 100000000 | floor')
+# Calculate total outputs in satoshis (handle scientific notation)
+OUTPUTS_SATS=$(echo "$TX_DATA" | jq -r '[.vout[].value] | add | (. * 100000000 | tostring | split(".")[0])')
 
-# Calculate total inputs in satoshis
+# Initialize inputs total
 INPUTS_SATS=0
+
+# Process each input
 for vin in $(echo "$TX_DATA" | jq -c '.vin[]'); do
     prev_txid=$(echo "$vin" | jq -r '.txid')
     vout=$(echo "$vin" | jq -r '.vout')
     
-    # Skip if coinbase input (null txid)
+    # Skip coinbase inputs
     if [ "$prev_txid" == "null" ]; then
         continue
     fi
     
-    prev_tx_data=$(bitcoin-cli -signet getrawtransaction "$prev_txid" 1)
-    value=$(echo "$prev_tx_data" | jq -r ".vout[$vout].value")
-    INPUTS_SATS=$((INPUTS_SATS + $(btc_to_sats "$value")))
+    # Get previous output value
+    value=$(bitcoin-cli -signet getrawtransaction "$prev_txid" 1 | jq -r ".vout[$vout].value")
+    
+    # Convert to satoshis and add to total
+    INPUTS_SATS=$((INPUTS_SATS + $(echo "$value * 100000000" | bc | awk '{printf "%.0f", $1}')))
 done
 
-# Calculate fee
-FEE_SATS=$((INPUTS_SATS - OUTPUTS_SATS))
+# Calculate fee (handle case where inputs = 0)
+if [ "$INPUTS_SATS" -eq 0 ]; then
+    FEE_SATS=0
+else
+    FEE_SATS=$((INPUTS_SATS - OUTPUTS_SATS))
+fi
 
-# Output just the fee amount
-echo "$FEE_SATS"
+# Output ONLY the fee number with no extra characters
+echo $FEE_SATS
