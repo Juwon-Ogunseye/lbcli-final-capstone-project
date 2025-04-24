@@ -20,6 +20,5 @@ for TXID in $TXIDS; do
   done
 done
 
-# If none match, exit with failure (autograder-style)
 exit 1
 
