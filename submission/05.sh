@@ -4,25 +4,27 @@
 
 TXID="b71fb9ab7707407cc7265591e0c0d47d07afede654f91de1f63c0cb522914bcb"
 
-# Get raw transaction with input details
+# Get transaction with previous output information
 TX_DATA=$(bitcoin-cli -signet getrawtransaction "$TXID" 1)
 
-# Calculate total outputs in satoshis
-OUTPUTS=$(echo "$TX_DATA" | jq -r '[.vout[].value] | add * 100000000 | floor')
+# Calculate total outputs in satoshis (truncate decimals)
+OUTPUTS=$(echo "$TX_DATA" | jq -r '[.vout[].value] | add * 100000000 | trunc')
 
-# Calculate total inputs in satoshis
+# Initialize inputs total
 INPUTS=0
+
+# Process each input
 for vin in $(echo "$TX_DATA" | jq -c '.vin[]'); do
     prev_txid=$(echo "$vin" | jq -r '.txid')
-    [[ "$prev_txid" == "null" ]] && continue  # Skip coinbase inputs
-    
     vout=$(echo "$vin" | jq -r '.vout')
-    value=$(bitcoin-cli -signet getrawtransaction "$prev_txid" 1 | jq -r ".vout[$vout].value")
-    INPUTS=$(echo "$INPUTS + ($value * 100000000)/1" | bc)
+    
+    # Skip coinbase inputs
+    if [ "$prev_txid" != "null" ]; then
+        # Get previous output value and convert to satoshis
+        value=$(bitcoin-cli -signet getrawtransaction "$prev_txid" 1 | jq -r ".vout[$vout].value")
+        INPUTS=$(echo "$INPUTS + ($value * 100000000)/1" | bc)
+    fi
 done
 
-# Calculate fee (inputs - outputs)
-FEE=$((INPUTS - OUTPUTS))
-
-# Print only the fee amount with no extra characters
-echo $FEE
+# Calculate and print fee (inputs - outputs)
+echo $((INPUTS - OUTPUTS))
